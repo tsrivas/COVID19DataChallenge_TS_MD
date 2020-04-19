@@ -1,0 +1,187 @@
+---
+title: "360datacompilation"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load}
+library(tidyverse)
+library(readxl)
+library(skimr)
+library(data.table)
+```
+### Prior Data
+```{r compiledata}
+dat<- read_csv("JHU_Covid19 Reports/Compiled.csv")
+dat[is.na(dat)]<-0
+distinctdat<- distinct(dat)
+write.csv(distinctdat,"distinctdat.csv")
+```
+
+### US Data
+```{r propage}
+#Proportion of Age Group by State according to the 2010 Census
+age<- read_csv("DemographicData_States.csv")
+names<- state.name
+age$AGE[age$AGE<10]<- 1 #0-9
+age$AGE[age$AGE>=10 & age$AGE<20]<- 2 #10-19
+age$AGE[age$AGE>=20 & age$AGE<30]<- 3 #20-29
+age$AGE[age$AGE>=30 & age$AGE<40]<- 4 #30-39
+age$AGE[age$AGE>=40 & age$AGE<50]<- 5 #40-49
+age$AGE[age$AGE>=50 & age$AGE<60]<- 6 #50-59
+age$AGE[age$AGE>=60 & age$AGE<70]<- 7 #60-69
+age$AGE[age$AGE>=70]<- 8 #70-85
+
+frame<- NULL
+for (i in names){
+  state<- subset(age, age$NAME==i)
+  count<- aggregate(CENSUS2010POP~AGE, state, sum)
+  count$AGEPROPORTION<- count$CENSUS2010POP/sum(count$CENSUS2010POP)
+  frame<- rbind(frame, count)
+}
+
+vect<- NULL
+for (i in names){
+  vect<- c(vect, rep(i,8))
+}
+frame$STATE<- vect
+propage<- frame[,c(4,1,2,3)]
+write.csv(propage,"propage.csv")
+
+state<- subset(propage, propage$STATE=="Alabama")
+fulldat<- NULL
+propgrp<- NULL
+for (i in names){
+  state<- subset(propage, propage$STATE==i)
+  agevect<- state$AGEPROPORTION
+  AGE1<- agevect[1]+agevect[2]
+  AGE2<- agevect[3]+agevect[4]
+  AGE3<- agevect[5]+agevect[6]
+  AGE4<- agevect[7]+agevect[8]
+  statedat<- cbind(AGE1, AGE2, AGE3, AGE4)
+  fulldat<- rbind(fulldat,statedat)
+}
+fulldat<- as.data.frame(fulldat)
+fulldat<- cbind(state.name, fulldat)
+names(fulldat)<- c("STATE", "PropAGE1","PropAGE2","PropAGE3","PropAGE4")
+```
+
+```{r party}
+#Governors in 2020
+govs<- read_excel("GovernorData.xlsx")
+```
+
+```{r pop}
+#Population Density in 2020
+popdens<- read_excel("PopulationDensity .xlsx")
+```
+
+```{r hospitals}
+#Hospital Data from 2019
+hospitals<- read_csv("Hospitals.csv")
+hosp<- hospitals
+for (i in 1:50){
+  hosp$STATE[hosp$STATE==state.abb[i]]<-state.name[i]
+}
+for (i in 1:nrow(hosp)){
+  hosp$HospCount<-1
+}
+
+hospframe<- NULL
+for (i in names){
+  state<- subset(hosp, hosp$STATE==i)
+  count<- aggregate(HospCount~STATE, state, sum)
+  hospframe<- rbind(hospframe, count)
+}
+
+hospframe$BedsPer1000<- c(3.1,2.2,1.9,3.2,1.8,1.9,2.0,2.2,2.6,2.4,1.9,1.9,2.5,2.7,3.0,3.3,3.2,3.3,2.5,1.9,2.3,2.5,2.5,4.0,3.1,3.3,3.6,2.1,2.1,2.4,1.8,2.7,2.1,4.3,2.8,2.8,1.6,2.9,2.1,2.4,4.8,2.9,2.3,1.8,2.1,2.1,1.7,3.8,2.1,3.5)
+```
+
+```{r stateresponse}
+#State Responses as of April 10
+response<- read_csv("StateResponseData.csv")
+```
+```{r}
+#social mobility index data-- generated until March 23
+#Reduction=1-SMI_after/SMI_before
+SMI<- read_csv("SMI_Data.csv")
+head(SMI)
+for (i in 1:50){
+  SMI$STATE[SMI$STATE==state.abb[i]]<-state.name[i]
+}
+```
+
+```{r suggested}
+#Per Capita Income (1)
+income<- read_excel("PerCapIncome2019.xlsx")
+names(income)<- c("STATE", "PerCap Income 2019") #PerCapita Personal Income in Dollars
+
+#Mortality Rate in 2016 (2)
+mortality<- read_excel("Mortality2016.xlsx")
+mortality<- mortality[,-2:-4]
+names(mortality)<- c("STATE","CrudeMortRate")
+
+#First Infection
+#Cases until April 13
+cases<- read_csv("us-states-NYT.csv")
+cases<- distinct(cases)
+#Case Totals
+casedat<-NULL
+casedat$state<- as.data.frame(state.name)
+casevect<-NULL
+for (i in state.name){
+  d<- subset(cases, state==i)
+  casevect[i]<- d$cases[which(d$date == "4/13/20")]
+}
+casedat<- cbind(casedat,as.data.frame(casevect))
+names(casedat)<- c("STATE","cases")
+#Death Totals
+deathdat<-NULL
+deathdat$state<- as.data.frame(state.name)
+deathvect<-NULL
+for (i in state.name){
+  d<- subset(cases, state==i)
+  deathvect[i]<- d$deaths[which(d$date == "4/13/20")]
+}
+deathdat<- cbind(deathdat,as.data.frame(deathvect))
+names(deathdat)<- c("STATE","deaths")
+covidtots<- merge(casedat,deathdat,by="STATE")
+
+t.first <- cases[match(unique(cases$state), cases$state),]
+names(t.first)<- c("Date of First Case", "STATE","fips","cases","deaths")
+t.first<-t.first[,-3:-5]
+
+#Stay at Home as of April 13
+sah<- read_excel("StayAtHome.xlsx")
+sah$`Stay At Home Date`<- as.character(sah$`Stay At Home Date`)
+stayathome<- merge(t.first,sah, by="STATE")
+write.csv(stayathome,"stayathome.csv")
+
+#Full Date Data (3)
+datedata<- read_csv("StayDateData.csv")
+
+#Percent Uninsured in 2018 (4)
+uninsured<- read_excel("UninsuredScore.xlsx")
+```
+
+```{r fulldataset}
+total<- merge(covidtots,popdens, by="STATE") 
+total<- merge(total,fulldat,by="STATE")
+total<- merge(total,income,by="STATE")
+total<- merge(total,mortality,by="STATE")
+total<- merge(total,uninsured,by="STATE")
+total<- merge(total, hospframe, by="STATE")
+total <- merge(total,govs,by="STATE")
+total <- merge(total,datedata,by="STATE") 
+total<- merge(total, response, by="STATE")
+total<- merge(total, SMI, by="STATE")
+drops <- c("GOVERNOR")
+total<- total[ , !(names(total) %in% drops)]
+view(total)
+
+write.csv(total, "Apr13USTot.csv")
+```
+
