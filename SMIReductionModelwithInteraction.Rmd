@@ -1,0 +1,373 @@
+---
+title: "Modelling SMI Reduction"
+author: "Tamanna Srivastava and Mihir Dutta"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  word_document: default
+  html_document: default
+---
+### Load packages
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+library(rstan)
+library(rstanarm)
+library(BMS)
+library(mice)
+library(olsrr)
+library(BAS)
+library(GGally)
+library(skimr)
+library(cowplot)
+library(usmap)
+library(ggExtra)
+```
+
+## Read and Clean Data
+
+```{r load-data}
+cases <- data.frame(read.csv(file = 'Apr13USTot-2.csv'))
+statetime<- suppressMessages(read_csv("us-states-NYT.csv"))
+skim(cases)
+```
+
+```{r cleaning}
+clean_cases <- cases %>%
+  mutate(isRepublican = case_when(
+    GOVERNOR.PARTY == "Republican" ~ 1,
+    GOVERNOR.PARTY == "Democrat" ~ 0
+  )) %>%
+  mutate(isGovLimit = case_when(
+     GOVTERM.LIMIT == "No" ~ 0,
+     GOVTERM.LIMIT == "Yes" ~ 1
+   )) %>%
+  mutate(stayAtHomeLevel = case_when(
+    Stay.At.Home.Order == "Not Statewide" ~ 0,
+    Stay.At.Home.Order == "Other" | Stay.At.Home.Order == "High-risk Groups" ~ 1,
+    Stay.At.Home.Order == "Statewide" ~ 2
+  )) %>%
+  mutate(travelerQuarantineLevel = case_when(
+    Mandatory.Quarantine.for.Travelers == "No Requirement" ~ 0,
+    Mandatory.Quarantine.for.Travelers == "From Certain States" | Mandatory.Quarantine.for.Travelers == "All Air Travelers" ~ 1,
+    Mandatory.Quarantine.for.Travelers == "All Travelers" ~ 2
+  )) %>%
+  mutate(Percent.Uninsured = Percent.Uninsured/100) %>%
+  mutate(nonEssentialClosed = case_when(
+    Non.Essential.Business.Closures == "All Non-Essential Businesses" | Non.Essential.Business.Closures == "All Non-Essential Retail Businesses" ~ 1,
+    Non.Essential.Business.Closures == "Not All Non-Essential Businesses" ~ 0
+  )) %>%
+  mutate(banLargeGatherings = case_when(
+    Large.Gatherings.Ban == "All Gatherings Prohibited" ~ 3,
+    Large.Gatherings.Ban == ">10 People Prohibited" ~ 2,
+    Large.Gatherings.Ban == ">5 People Prohibited" ~ 1,
+    Large.Gatherings.Ban == "Other" ~ 0
+  )) %>%
+  mutate(barsRestaurantsClosed = case_when(
+    Bar.Restaurant.Limits == "Closed except for takeout/delivery" ~ 1,
+    Bar.Restaurant.Limits != "Closed except for takeout/delivery" ~ 0
+  )) %>%
+  select(-GOVTERM.LIMIT, -Mandatory.Quarantine.for.Travelers, -Stay.At.Home.Order, -num_users, -num_records, -SMI_before, -SMI_after, -GOVERNOR.PARTY, -Date.of.First.Case, -Stay.At.Home.Date, -Non.Essential.Business.Closures, -Large.Gatherings.Ban, -School.Closures, -Bar.Restaurant.Limits)
+
+clean_cases$REGION <- as.factor(clean_cases$REGION)
+clean_cases$DIVISION <- as.factor(clean_cases$DIVISION)
+clean_cases$GOVSTART <- as.factor(clean_cases$GOVSTART)
+clean_cases$GOVEND <- as.factor(clean_cases$GOVEND)
+clean_cases$isGovLimit <- as.factor(clean_cases$isGovLimit)
+clean_cases$stayAtHomeLevel <- as.factor(clean_cases$stayAtHomeLevel)
+clean_cases$travelerQuarantineLevel <- as.factor(clean_cases$travelerQuarantineLevel)
+clean_cases$nonEssentialClosed <- as.factor(clean_cases$nonEssentialClosed)
+clean_cases$banLargeGatherings <- as.factor(clean_cases$banLargeGatherings)
+clean_cases$barsRestaurantsClosed <- as.factor(clean_cases$barsRestaurantsClosed)
+
+clean_cases$Days.Between <- as.numeric(clean_cases$Days.Between)
+clean_cases$Days.Between[is.na(clean_cases$Days.Between)] <- 70
+clean_cases$nonEssentialClosed[is.na(clean_cases$nonEssentialClosed)] <- 0
+clean_cases$banLargeGatherings[is.na(clean_cases$banLargeGatherings)] <- 0
+clean_cases$barsRestaurantsClosed[is.na(clean_cases$barsRestaurantsClosed)] <- 0
+```
+
+```{r prepModel}
+modelPrep <- clean_cases %>%
+  select(-X, -STATE) %>%
+  select(SMI_reduction, everything())
+
+modelPrep$PropAGE1 <- as.numeric(clean_cases$PropAGE1)
+modelPrep$PropAGE2 <- as.numeric(clean_cases$PropAGE2)
+modelPrep$PropAGE3 <- as.numeric(clean_cases$PropAGE3)
+modelPrep$PropAGE4 <- as.numeric(clean_cases$PropAGE4)
+modelPrep$REGION <- as.numeric(clean_cases$REGION)
+modelPrep$DIVISION <- as.numeric(clean_cases$DIVISION)
+modelPrep$GOVSTART <- as.numeric(clean_cases$GOVSTART)
+modelPrep$GOVEND <- as.numeric(clean_cases$GOVEND)
+modelPrep$isGovLimit <- as.numeric(clean_cases$isGovLimit)-1
+modelPrep$stayAtHomeLevel <- as.numeric(clean_cases$stayAtHomeLevel)
+modelPrep$travelerQuarantineLevel <- as.numeric(clean_cases$travelerQuarantineLevel)
+modelPrep$nonEssentialClosed <- as.numeric(clean_cases$nonEssentialClosed)
+modelPrep$banLargeGatherings <- as.numeric(clean_cases$banLargeGatherings)
+modelPrep$barsRestaurantsClosed <- as.numeric(clean_cases$barsRestaurantsClosed)
+
+```
+
+## EDA
+### US Cases and Deaths from state data
+```{r map}
+colnames(cases)[2] <- "state"
+
+p1<-plot_usmap(data = cases, values = "cases", color = "black") + 
+  scale_fill_continuous(name = "Cases (until April 13)", low= "white", high="darkblue",label = scales::comma) + 
+  theme(legend.position = "bottom",plot.title = element_text(hjust = 0.5,size=10, face="bold"),legend.text = element_text(size = 5.5))+ggtitle("Case Distribution by state \nin the US")
+
+p2<- plot_usmap(data = cases, values = "deaths", color = "black") + 
+  scale_fill_continuous(name = "Deaths (until April 13)", low= "white", high="darkred",label = scales::comma) + 
+  theme(legend.position = "bottom",plot.title = element_text(hjust = 0.5,size=10, face="bold"),legend.text = element_text(size = 5.5)) +ggtitle("Death Distribution by state \nin the US")
+
+plot_grid(p1,p2,nrow=2)
+```
+
+```{r usacasesvsdeaths}
+statetime$date<- as.Date(statetime$date, format='%m/%d/%y')
+dta.sum <- aggregate(x = statetime[c("cases","deaths")],
+                     FUN = sum,
+                     by = list(Group.date = statetime$date))
+dta.sum$Group.date<- as.Date(dta.sum$Group.date, format='%m/%d/%y')
+
+p<- ggplot(dta.sum,aes(x=Group.date))+geom_line(aes(y=cases, color="b"))+geom_line(aes(y=deaths,color="r"))+ggtitle(paste("Death and Case Trajectory in the US \nuntil April 13"))+ scale_color_manual(name = 'Key', values =c('b'='blue','r'='red'), labels = c('Cases','Deaths'))+theme(legend.position="bottom",plot.title = element_text(hjust = 0.5,size=10, face="bold"))
+
+p2<- ggplot(dta.sum,aes(x=cases))+geom_point(aes(y=deaths),color="blue")+geom_smooth(aes(y=deaths), method="loess")+ggtitle(paste("Cases vs. Deaths in the US \nuntil April 13"))+theme(plot.title = element_text(hjust = 0.5,size=10, face="bold"))
+
+print(plot_grid(p,p2, align="h",axis = 'b'))
+```
+
+### Predictor Assessment
+```{r assess, warning=FALSE, message=FALSE}
+#Linearity, Constant Variance, Normality, and Independence Assumptions
+
+#EDA Response: SMI_reduction
+ggplot(data=modelPrep, aes(SMI_reduction))+geom_histogram()+ggtitle(paste("Histogram of SMI Reduction"))+theme(plot.title = element_text(hjust = 0.5,size=10, face="bold"))
+
+ggplot(data=modelPrep, aes(log(SMI_reduction)))+geom_histogram()+ggtitle(paste("Histogram of log(SMI Reduction)"))+theme(plot.title = element_text(hjust = 0.5,size=10, face="bold"))
+
+#EDA Predictors
+for (i in 2:ncol(modelPrep)) { # Loop over loop.vector
+
+  # store data in column.i as x
+  x <- modelPrep[,i]
+  # Plot histogram of x
+  p1<- ggplot(data=modelPrep, aes(x))+geom_histogram()+ggtitle(paste("Histogram of \n",names(modelPrep)[i]))+theme(plot.title = element_text(hjust = 0.5,size=10, face="bold"))+xlab(paste(names(modelPrep)[i]))
+  
+  #Plot Scatterplot 
+  p2<- ggplot(data=modelPrep, aes(x,SMI_reduction))+geom_point()+ggtitle(paste("SMI_reduction vs. \n",names(modelPrep)[i]))+theme(plot.title = element_text(hjust = 0.5,size=10, face="bold"))+xlab(paste(names(modelPrep)[i]))
+  
+  print(plot_grid(p1,p2))
+}
+```
+
+### Traditional Model Selection
+
+```{r performNormalSelection}
+# Compute the total number of observations
+n = nrow(modelPrep)
+
+# Full model using all predictors
+cog.lm = lm(SMI_reduction ~ . + isRepublican*isGovLimit + DIVISION*PerCap.Income.2019 + Days.Between*isRepublican + HospCount*BedsPer1000, data=modelPrep)
+
+# Perform BIC elimination from full model
+# k = log(n): penalty for BIC rather than AIC
+cog.step = step(cog.lm, k=log(n))   
+```
+
+### AIC Predictor EDA
+```{r modelassump, warning=FALSE, message=FALSE}
+#EDA for chosen Predictors
+cleanerModelPrep <- modelPrep %>%
+  select(SMI_reduction, cases, REGION, LAND.AREA, PropAGE1, PropAGE2,  
+    PropAGE3, PerCap.Income.2019, Percent.Uninsured, isRepublican, isGovLimit, SAH35DY, SAH56DY, SAH63DY, banLargeGatherings, isRepublican:isGovLimit,DIVISION:PerCap.Income.2019, Days.Between:isRepublican, HospCount:BedsPer1000)
+
+interacting<- modelPrep %>% select(isRepublican, isGovLimit, DIVISION, PerCap.Income.2019, Days.Between, HospCount,BedsPer1000)
+ggpairs(interacting)+ theme_grey(base_size = 5)
+
+#Case eda
+title <- ggdraw() + 
+  draw_label(
+    "EDA for SMI reduction vs. Cases",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+p1<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=cases, y=SMI_reduction))+geom_point()+xlim(0,10000)+geom_smooth(method="lm")+ggtitle("SMI reduction vs. Cases \nwith outliers removed")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="lightblue")
+
+p2<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=cases, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. Cases")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="lightblue")
+row<- plot_grid(p2,p1)
+
+h1<- plot_grid(title, row, ncol=1, rel_heights = c(0.2,1))
+
+#Region eda
+h2<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=REGION, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. Region")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="boxplot")
+
+#Land Area eda
+
+title <- ggdraw() + 
+  draw_label(
+    "EDA for SMI reduction vs. Land Area",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+p1<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=LAND.AREA, y=SMI_reduction))+geom_point()+xlim(0,200000)+geom_smooth(method="lm")+ggtitle("SMI reduction vs. Land Area \nwith outliers removed")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="seagreen")
+
+p2<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=LAND.AREA, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. Land Area \nwith outliers removed")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="seagreen")
+row<- plot_grid(p2,p1)
+
+h3<- plot_grid(title, row, ncol=1, rel_heights = c(0.2,1))
+
+#PropAGE1 eda
+h4<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=PropAGE1, y=SMI_reduction))+geom_smooth(method="lm")+geom_point()+ggtitle("SMI reduction vs. State Proportion \nof Individuals Aged 0-19 ")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="pink")
+
+
+#PropAGE2 eda
+h5<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=PropAGE2, y=SMI_reduction))+geom_smooth(method="lm")+geom_point()+ggtitle("SMI reduction vs. State Proportion \nof Individuals Aged 20-39 ")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="red")
+
+#PropAGE3 eda
+h6<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=PropAGE3, y=SMI_reduction))+geom_smooth(method="lm")+geom_point()+ggtitle("SMI reduction vs. State Proportion \nof Individuals Aged 40-59 ")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="purple")
+
+#Per Capita Income eda
+h7<-ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=PerCap.Income.2019, y=SMI_reduction))+geom_smooth(method="lm")+geom_point()+ggtitle("SMI reduction vs. \nState Per Capita Income (2019)")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="lightblue")
+
+#Percent Uninsured eda
+h8<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=Percent.Uninsured, y=SMI_reduction))+geom_smooth(method="lm")+geom_point()+ggtitle("SMI reduction vs. Percent Uninsured")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram", fill="lightgreen")
+
+#isRepublican eda
+h9<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=isRepublican, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. isRepublican")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram")
+
+#isGovLimit eda
+h10<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=isGovLimit, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs.isGovLimit")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram")
+
+#SAH35 eda
+h11<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=SAH35DY, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. SAH35DY")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram")
+
+#SAH56 eda
+h12<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=SAH56DY, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. SAH56DY")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram")
+
+#SAH63 eda
+h13<-ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=SAH63DY, y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. SAH63DY")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="histogram")
+
+#banlargegatherings
+h14<- ggMarginal(ggplot(data=cleanerModelPrep, mapping=aes(x=banLargeGatherings,y=SMI_reduction))+geom_point()+ggtitle("SMI reduction vs. Ban on Large Gatherings ")+theme(plot.title = element_text(hjust = 0.5,size=10),axis.title=element_text(size=7)), type="boxplot")
+
+plot_grid(h1,h3,nrow=2)
+plot_grid(h2,h14,h4,h5,ncol=2)
+plot_grid(h6,h7,h8,h9)
+plot_grid(h10,h11,h12,h13)
+```
+
+```{r linearModelDefine}
+chosenLinearModel <- lm(SMI_reduction ~ cases + REGION + LAND.AREA + PropAGE1 + PropAGE2 + 
+    PropAGE3 + PerCap.Income.2019 + Percent.Uninsured + SAH35DY + 
+    SAH56DY + SAH63DY + isRepublican + isGovLimit + banLargeGatherings + 
+    isRepublican:isGovLimit, data = modelPrep)
+summary(chosenLinearModel)
+```
+
+```{r checkmodelassump}
+c1<-ggplot(data=modelPrep, mapping=aes(x=residuals(chosenLinearModel))) + geom_histogram() + ggtitle("Histogram of Residuals")+theme(plot.title = element_text(size = 10, face = "bold"))
+
+c2<- ggplot(data= modelPrep, mapping=aes(sample=residuals(chosenLinearModel))) +
+  stat_qq() + 
+  stat_qq_line()+
+  labs(title="Normal QQ Plot of Residuals") + xlab("Theoretical") + ylab("Sample")+theme(plot.title = element_text(size = 10, face = "bold"))
+  
+c3  <- ggplot(data=modelPrep, mapping=aes(x=predict(chosenLinearModel),y=residuals(chosenLinearModel))) +
+  geom_point(size=0.2) + 
+  geom_hline(yintercept=0,color="red")+
+  labs(title="Residuals vs. \nPredicted Values",
+       x="Predicted Values (by model)", 
+       y="Residuals")+theme(plot.title = element_text(size = 10, face = "bold"))+theme(axis.text.x=element_text(size=8))+theme(text = element_text(size=9))
+plot_grid(c1,c2,c3, nrow=2)
+```
+
+## Bayesian Model Selection
+
+```{r smallerBayesModelSelect}
+#Attempted Bayesian Model Selection with 18 predictors - max allowed without crashing
+cleanModelPrep <- modelPrep %>%
+  select(SMI_reduction, cases , REGION , LAND.AREA , PropAGE1 , PropAGE2 , 
+    PropAGE3 , PerCap.Income.2019 , Percent.Uninsured , SAH35DY , 
+    SAH56DY , SAH63DY , isRepublican , isGovLimit , banLargeGatherings, isRepublican:isGovLimit)
+
+bms(X.data = cleanModelPrep)
+```
+Based on Posterior inclusion probabilities, top predictors for SMI reduction are PerCap.Income.2019, PropAGE2, SAH63DY, REGION, Percent.Uninsured, and Land Area. These predictors had significantly higher probabilities of being included in the posterior model than the other predictors based on the bms method. 
+
+```{r identifyBayesModel}
+cleanerModelPrep <- modelPrep %>%
+  select(SMI_reduction, cases , REGION , LAND.AREA , PropAGE1 , PropAGE2 , 
+    PropAGE3 , PerCap.Income.2019 , Percent.Uninsured , SAH35DY , 
+    SAH56DY , SAH63DY , isRepublican , isGovLimit , banLargeGatherings , Days.Between, HospCount, BedsPer1000, DIVISION)
+
+# Use `bas.lm` to run regression model
+bayes.BIC = bas.lm(SMI_reduction ~ . + isRepublican:isGovLimit + DIVISION:PerCap.Income.2019 + Days.Between:isRepublican + HospCount:BedsPer1000, data = cleanerModelPrep, prior = "BIC", modelprior = uniform())
+
+summary(bayes.BIC)
+
+# Find the index of the model with the largest logmarg
+best = which.max(bayes.BIC$logmarg)
+
+# Retreat the index of variables in the best model, with 0 as the index of the intercept
+bestmodel = bayes.BIC$which[[best]]
+
+bestmodel
+
+# Best predictors: (Intercept), REGION, LAND.AREA, PropAGE2, Percent.Uninsured, SAH63DY, and isRepublican:isGovLimit
+```
+Based on bas.lm regression modelling, the model with the highest logmarg (best model) includes (Intercept), REGION, LAND.AREA, PropAGE2, Percent.Uninsured, SAH63DY, and isRepublican:isGovLimit. This model includes all of the predictors with the highest PIP (as computed in bms) except for PerCap.Income.2019 and an interaction term. This confirms that the optimized singular predictors are REGION, LAND.AREA, PropAGE2, Percent.Uninsured, and SAH63DY for SMI reduction. The interaction between isRepublican:isGovLimit should also be considered.
+
+```{r outputmodelparams}
+#credible intervals for coefficients
+coef.bas<- confint(coef(bayes.BIC))
+predictor<-c(rownames(coef.bas)[1],rownames(coef.bas)[3],rownames(coef.bas)[4],rownames(coef.bas)[6],rownames(coef.bas)[9],rownames(coef.bas)[12],rownames(coef.bas)[20])
+coef<- rbind(coef.bas[1,], coef.bas[3,], coef.bas[4,], coef.bas[6,], coef.bas[9,], coef.bas[12,], coef.bas[20,])
+
+# Best predictors: (Intercept), REGION, LAND.AREA, PropAGE2, Percent.Uninsured, SAH63DY, and isRepublican:isGovLimit
+coefcred<- as.data.frame(cbind(predictor,coef))
+coefcred[c(1,4,2,3)]
+```
+
+Above is the table of coefficients from the optimized Bayesian linear regression model. 
+
+## Run Bayesian Model and Perform Posterior Predictive Sampling
+
+The stan_glm tries to fit a Gaussian family multivariate regression model to estimate the predictor effects for the regression model given above. Predictor estimates seen below are relatively consistent to the values given above indicating we can use these as estimates of parameter effects on SMI_reduction. 
+
+```{r bayesModelDefine}
+chosenBayesGaussian <- stan_glm(SMI_reduction ~ REGION + LAND.AREA + PropAGE2 + Percent.Uninsured+SAH63DY+isRepublican:isGovLimit, family=gaussian(), data = modelPrep)
+
+#Use Monte Carlo simulations to fit a Gaussian linear model in order to output posterior predictive values for SMI_rediction
+summary(chosenBayesGaussian)
+```
+
+
+```{r}
+predLabels <- c("(Intercept)","REGION","LAND.AREA", "PropAGE2", "Percent.Uninsured", "SAH63DY", "isRepublican:isGovLimit")
+
+#trace plots to assess Monte Carlo efficacy
+stan_trace(chosenBayesGaussian, pars=predLabels)
+
+##Draw Posterior Predictive Check Graphs
+#y=vector of outcome values from the data
+#yrep=draws from posterior predictive distribution
+pp_check(chosenBayesGaussian)
+```
+
