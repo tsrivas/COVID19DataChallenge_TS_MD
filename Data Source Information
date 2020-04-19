@@ -1,0 +1,85 @@
+Sources in April13USTot-2.csv:
+
+1. X: Just a variable indicating which of the 50 states we are looking it (no link)
+
+2. STATE: Name of each of thhe 50 states (no link)
+
+3. cases: Number of cases per state in the US from the NYT taken until April 13 
+    a. Link: https://github.com/nytimes/covid-19-data
+    b. File: us-states.csv
+    
+4. deaths: Number of deaths per state in the US from the NYT taken until April 13
+    a. Link: https://github.com/nytimes/covid-19-data
+    b. File: us-states.csv
+    
+5. REGION: Region categorization for each state given by the US Census Bureau
+    a. Link: https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
+    
+6. DIVISION: Geographical division categorization for each state given by the US Census Bureau
+    a. Link: https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
+    
+7. POPULATION: State population based on Keydata Datsets
+    a. Link: https://state.1keydata.com/state-population-density.php
+    
+8. Land Area: State Land Area in square miles
+    a. Link: https://state.1keydata.com/state-population-density.php
+    
+9. Population Density: Population density within each state
+    a. Link: https://state.1keydata.com/state-population-density.php
+    
+10. PropAGE1: Proportion of individuals per state aged 0-19 based on the 2010 US Census
+    a: Link: https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html#par_textimage_673542126 
+    b. File: Annual State Resident Population Estimates for 6 Race Groups (5 Race Alone Groups and Two or More Races) by Age, Sex, and Hispanic Origin: April 1, 2010 to July 1, 2018 (SC-EST2018-ALLDATA6)   [<1.0 MB]
+
+11. PropAGE2: Proportion of individuals per state aged 20-39 based on the 2010 US Census
+    a: Link: https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html#par_textimage_673542126 
+    b. File: Annual State Resident Population Estimates for 6 Race Groups (5 Race Alone Groups and Two or More Races) by Age, Sex, and Hispanic Origin: April 1, 2010 to July 1, 2018 (SC-EST2018-ALLDATA6)   [<1.0 MB]
+
+12. PropAGE3: Proportion of individuals per state aged 40-59 based on the 2010 US Census
+    a: Link: https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html#par_textimage_673542126 
+    b. File: Annual State Resident Population Estimates for 6 Race Groups (5 Race Alone Groups and Two or More Races) by Age, Sex, and Hispanic Origin: April 1, 2010 to July 1, 2018 (SC-EST2018-ALLDATA6)   [<1.0 MB]
+
+13. PropAGE4: Proportion of individuals per state aged 60+ based on the 2010 US Census    
+    a: Link: https://www.census.gov/data/tables/time-series/demo/popest/2010s-state-detail.html#par_textimage_673542126 
+    b. File: Annual State Resident Population Estimates for 6 Race Groups (5 Race Alone Groups and Two or More Races) by Age, Sex, and Hispanic Origin: April 1, 2010 to July 1, 2018 (SC-EST2018-ALLDATA6)   [<1.0 MB]
+
+14. PerCap Income: Per capita income per state based on a 2019 reporting by the Bureau of Economic Analysis in the US Department of Commerce
+    a. Link: https://www.bea.gov/data/income-saving/personal-income-by-state
+    b. File: State Annual Personal Income, 2019 (Preliminary) and State Quarterly Personal Income, 4th Quarter 2019
+
+15. CrudeMortRate: Crude state mortality rate for every 100,000 people in 2016 reported by the CDC
+    a. Link: https://wonder.cdc.gov/controller/datarequest/D140
+    b. Request done from the CDC: https://wonder.cdc.gov/controller/datarequest/D140;jsessionid=122300513694C4B535FB3D0A5EAE8982
+
+16. Percent Uninsured: State percent of those without health insurance in 2018 reported by the US Census Bureau
+    a. Link: https://www.census.gov/data/tables/time-series/demo/health-insurance/acs-hi.html
+    b. File: Health Insurance Coverage Status and Type of Coverage by State and Age for All People: 2018   [<1.0 MB]
+   
+17. HopCount: Approximate number of hopitals per state in 2019 as reported in Homeland Infrastructure Foundation-Level Data
+    a. Link: https://hifld-geoplatform.opendata.arcgis.com/datasets/hospitals?geometry=159.444%2C-16.829%2C169.640%2C72.120&selectedAttribute=STATUS
+
+18. BedsPer1000: Hospital Beds per 1000 people in 2018 per state reported byy the Kaiser Family Foundation
+    a. Link: https://www.kff.org/other/state-indicator/beds-by-ownership/?currentTimeframe=0&sortModel=%7B%22colId%22:%22Total%22,%22sort%22:%22asc%22%7D
+
+19. Governor information: GOVERNOR (name of current governor per state), GOV START (governor term start date), GOV END (term end date), GOVTERM LIMIT (whether they have reached their term limit)
+    a. https://en.wikipedia.org/wiki/List_of_United_States_governors
+    
+20. Date of First Case: Date of First Case of COVID-19 in each state
+    a. Link: https://github.com/nytimes/covid-19-data
+    b. File: us-states.csv
+ 
+21. Date of Stay at Home Implementation: Date of Stay-at-home order per state updated until April 13
+    a. Link: https://www.washingtonpost.com/health/2020/04/06/coronavirus-stay-at-home-by-state/#ohio
+    b. SAHXDY variables are the indicators of whether SAH order was implemented X days since their first case
+    
+22. Stay At Home Provisions per state until April 10 as reported by the Kaiser Family Foundation 
+    a. Stay at Home Order (Statewide, Not Statewide, High-risk group, Other)
+    b. Non-essential Business Closures (All, Not All)
+    c. Large Gatherings Ban (All, >10 people, >5 people, NA)
+    d. School Closures (Yes, Effectively Closed)
+    e. Bar/Restaurant limits (Closed except for takeout/delivery, Limited on-site service, Other, NA)
+    f. Link: https://www.kff.org/health-costs/issue-brief/state-data-and-policy-actions-to-address-coronavirus/
+    
+23. Twitter Social Mobility Index: SMI_before, SMI_after, SMI_reduction, num_users, num_records given by researchers at JHU and GWU
+    a. Link: http://socialmobility.covid19dataresources.org/
+    b. File: social_mobility_index.state_data.20200330.csv
