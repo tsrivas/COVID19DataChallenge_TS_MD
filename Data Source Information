@@ -2,7 +2,7 @@ Sources in April13USTot-2.csv:
 
 1. X: Just a variable indicating which of the 50 states we are looking it (no link)
 
-2. STATE: Name of each of thhe 50 states (no link)
+2. STATE: Name of each of the 50 states (no link)
 
 3. cases: Number of cases per state in the US from the NYT taken until April 13 
     a. Link: https://github.com/nytimes/covid-19-data
